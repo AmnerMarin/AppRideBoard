@@ -1,8 +1,11 @@
-// Coordenadas de la Plaza de Armas de Cajamarca.
-const CAJAMARCA = { lat: -7.1537, lng: -78.5110 };
+import { shortenAddress, debounce } from './utils.js';
 
-var map = L.map('map').setView([CAJAMARCA.lat, CAJAMARCA.lng], 13);
-var marker = L.marker([CAJAMARCA.lat, CAJAMARCA.lng])
+
+// Coordenadas de la Plaza de Armas de Cajamarca.
+const CAJAMARCA = { lat: -7.1537, lon: -78.5110 };
+
+var map = L.map('map').setView([CAJAMARCA.lat, CAJAMARCA.lon], 13);
+var marker = L.marker([CAJAMARCA.lat, CAJAMARCA.lon])
     .addTo(map)
     .bindPopup('Plaza de Armas de Cajamarca')
 
@@ -24,7 +27,7 @@ function getCurrentPosition() {
             (position) => {
                 resolve({
                     lat: position.coords.latitude,
-                    lng: position.coords.longitude,
+                    lon: position.coords.longitude,
                     accuracy: position.coords.accuracy,
                 });
             },
@@ -51,17 +54,75 @@ async function locateUser() {
     try {
         const position = await getCurrentPosition();
 
-        userMarker = L.marker([position.lat, position.lng])
+        userMarker = L.marker([position.lat, position.lon])
             .addTo(map)
             .bindPopup('Estás aquí')
             .openPopup();
 
-        map.setView([position.lat, position.lng], 15);
+        map.setView([position.lat, position.lon], 15);
 
     } catch (error) {
         console.warn(error.message);
-        map.setView([CAJAMARCA.lat, CAJAMARCA.lng], 14);
+        map.setView([CAJAMARCA.lat, CAJAMARCA.lon], 14);
     }
 }
 
 locateUser();
+
+//Petición para Nominatim (Open Street Map)
+async function searchAdress(query) {
+    const params = new URLSearchParams({
+        q: query,
+        format: 'json',
+        limit: '5',
+        'accept-language': 'es'
+    })
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`);
+    if (!response.ok) {
+        throw new Error(`El servidor lanzó ${response.status}`);
+    }
+
+    const results = await response.json();
+
+
+    return results.map((result) => (
+        {
+            lat: Number.parseFloat(result.lat),
+            lon: Number.parseFloat(result.lon),
+            addres: result.display_name
+        }
+    ))
+}
+
+//CONECTAR LOS MÉTODOS AL INPUT
+const destInput = document.getElementById('destination-input');
+let destination = null;
+let destinationMarker = null;
+
+const buscar = debounce(async (query) => {
+    try {
+        const results = await searchAdress(query);
+        if (results.length === 0) return;
+
+        destination = results[0];
+
+
+        if (destinationMarker) map.removeLayer(destinationMarker);
+
+        destinationMarker = L.marker([destination.lat, destination.lon])
+            .addTo(map)
+            .bindPopup(shortenAddress(destination.addres));
+
+        map.setView([destination.lat, destination.lon]);
+
+    } catch (e) {
+        console.log(e.message);
+    }
+}, 450);
+
+destInput.addEventListener('input', (event) => {
+    const value = event.target.value.trim();
+    if (value.length < 3) return;
+    buscar(value);
+})
+
